@@ -287,11 +287,6 @@ def _select_last_activations(activations, sequence_lengths):
       `Tensor` of shape `[batch_size, k]`.
     """
     with tf.name_scope('select_last_activations', values=[activations, sequence_lengths]):
-        # batch_size, padded_length, num_units = tf.unstack(tf.shape(activations))
-        # reshaped_activations = tf.reshape(activations, [-1, num_units])
-        # indices = tf.range(batch_size) * padded_length + sequence_lengths - 1
-        # last_activations = tf.gather(reshaped_activations, indices)
-        # last_activations.set_shape([activations.get_shape()[0], activations.get_shape()[2]])
         batch_size, _, _ = tf.unstack(tf.shape(activations))
         batch_range = tf.range(batch_size)
         indices = tf.stack([batch_range, sequence_lengths - 1], axis=1)
