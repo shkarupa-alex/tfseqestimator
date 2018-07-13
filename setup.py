@@ -14,7 +14,7 @@ setup(
     license='MIT',
     packages=['tfseqestimator'],
     install_requires=[
-        'tensorflow>=1.8.0',
+        'tensorflow>=1.9.0',
     ],
     test_suite='nose.collector',
     tests_require=['nose']
