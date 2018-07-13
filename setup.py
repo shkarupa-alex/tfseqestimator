@@ -6,7 +6,7 @@ from setuptools import setup
 
 setup(
     name='tfseqestimator',
-    version='1.0.0',
+    version='1.1.0',
     description='Sequence estimator for Tensorflow',
     url='https://github.com/shkarupa-alex/tfseqestimator',
     author='Shkarupa Alex',
@@ -14,7 +14,7 @@ setup(
     license='MIT',
     packages=['tfseqestimator'],
     install_requires=[
-        'tensorflow>=1.8.0',
+        'tensorflow>=1.9.0',
     ],
     test_suite='nose.collector',
     tests_require=['nose']

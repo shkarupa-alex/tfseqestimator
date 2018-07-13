@@ -4,6 +4,9 @@ from __future__ import print_function
 
 from .estimator import FullSequenceClassifier, FullSequenceRegressor
 from .estimator import SequenceItemsClassifier, SequenceItemsRegressor
-from .rnn import RnnImplementation, RnnDirection, RnnType
+from .rnn import RnnType
 from .dense import DenseActivation
 
+
+# import tensorflow as tf
+# tf.estimator.DNNClassifier
