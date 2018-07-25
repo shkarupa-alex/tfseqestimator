@@ -107,14 +107,12 @@ def build_dynamic_rnn(sequence_input, sequence_length, params, is_training=False
         output of all RNN time steps.
     """
 
-    # with tf.variable_scope('rnn', values=(sequence_input, sequence_length)) as rnn_scope:
+    # with tf.variable_scope('rnn', values=(sequence_input, _get_sequence_length)) as rnn_scope:
     with tf.variable_scope('rnn'):
         RnnType.validate(params.rnn_type)
 
         if not len(params.rnn_layers):
             raise ValueError('At least one layer required for RNN.')
-
-        # with tf.variable_scope('rnn', values=(sequence_input, sequence_length)) as rnn_scope:
 
         # Convert to Time-major order
         sequence_input = tf.transpose(sequence_input, [1, 0, 2], name='time_major')
@@ -288,7 +286,6 @@ def _add_cudnn_rnn_layers(sequence_input, params, is_training=False):
 
     if 1 != len(set(params.rnn_layers)):
         tf.logging.warning('Cudnn RNNs does not support different layers sizes. Maximum size will be used.')
-
     cudnn_layers = len(params.rnn_layers)
     cuddnn_units = max(params.rnn_layers)
 
@@ -306,22 +303,28 @@ def _add_cudnn_rnn_layers(sequence_input, params, is_training=False):
 
     cudnn_dropout = params.rnn_dropout if is_training and params.rnn_dropout else 0.0
 
-    # Build Cudnn RNN
-    cudnn_rnn = cudnn_cell(
-        num_layers=cudnn_layers,
-        num_units=cuddnn_units,
-        direction=cudnn_direction,
-        dropout=cudnn_dropout,
-    )
-    rnn_outputs, _ = cudnn_rnn(sequence_input, training=is_training)
+    with tf.device('/gpu:0'):
+        partitioner = tf.get_variable_scope().partitioner
+        tf.get_variable_scope().set_partitioner(None)  # Partitioner not supported with CuDnn
+
+        # Build Cudnn RNN
+        cudnn_rnn = cudnn_cell(
+            num_layers=cudnn_layers,
+            num_units=cuddnn_units,
+            direction=cudnn_direction,
+            dropout=cudnn_dropout,
+        )
+        rnn_outputs, _ = cudnn_rnn(sequence_input, training=is_training)
+
+        tf.get_variable_scope().set_partitioner(partitioner)
 
     return rnn_outputs
 
 
 def select_last_activations(rnn_outputs, sequence_length):
-    """Selects the n-th set of activations for each n in `sequence_length`.
+    """Selects the n-th set of activations for each n in `_get_sequence_length`.
     Returns `Tensor` of shape `[batch_size, k]`.
-    `output[i, :] = activations[i, sequence_length[i] - 1, :]`.
+    `output[i, :] = activations[i, _get_sequence_length[i] - 1, :]`.
 
     Args:
       rnn_outputs: `Tensor` with shape `[batch_size, padded_length, k]`.

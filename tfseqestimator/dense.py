@@ -2,7 +2,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import six
 import tensorflow as tf
 from tensorflow.python.estimator.canned.dnn import _add_hidden_layer_summary
 

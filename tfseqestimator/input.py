@@ -27,13 +27,13 @@ def build_sequence_input(sequence_columns, context_columns, input_partitioner, f
 
     Returns:
       sequence_input: float `Tensor` of shape `[batch_size, padded_length, ?]`.
-      sequence_length: integer `Tensor` of shape `[batch_size]`.
+      _get_sequence_length: integer `Tensor` of shape `[batch_size]`.
     """
 
     with tf.variable_scope('features', values=tuple(six.itervalues(features)), partitioner=input_partitioner):
 
         sequence_input, sequence_length = sequence_input_layer(features=features, feature_columns=sequence_columns)
-        tf.summary.histogram('sequence_length', sequence_length)
+        tf.summary.histogram('_get_sequence_length', sequence_length)
 
         if params.sequence_dropout:
             batch_size, padded_length, _ = tf.unstack(tf.shape(sequence_input))

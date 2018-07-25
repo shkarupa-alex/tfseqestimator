@@ -37,11 +37,6 @@ def features_fixture():
             values=tf.random_uniform([10], seed=1),
             dense_shape=[3, 4]
         ),
-        'sequence_weight': tf.constant([
-                [1, 2],
-                [3, 4],
-                [5, 6],
-            ]),
     }
 
 

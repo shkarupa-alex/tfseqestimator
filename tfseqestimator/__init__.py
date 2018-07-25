@@ -6,7 +6,3 @@ from .estimator import FullSequenceClassifier, FullSequenceRegressor
 from .estimator import SequenceItemsClassifier, SequenceItemsRegressor
 from .rnn import RnnType
 from .dense import DenseActivation
-
-
-# import tensorflow as tf
-# tf.estimator.DNNClassifier

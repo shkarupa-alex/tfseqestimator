@@ -2,7 +2,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import six
 import tensorflow as tf
 from tensorflow.python.estimator.canned.head import _Head
 from tensorflow.contrib.estimator import binary_classification_head, multi_class_head, regression_head
@@ -10,7 +9,8 @@ from tensorflow.contrib.training import HParams
 from .rnn import RnnType
 from .dense import DenseActivation
 from .model import build_model_fn, PredictionType
-from .weight import make_sequence_weights, WEIGHTS_KEY
+from .head import sequence_binary_classification_head_with_sigmoid, sequence_multi_class_head_with_softmax
+from .head import sequence_regression_head_with_mse_loss
 
 
 class SequenceEstimator(tf.estimator.Estimator):
@@ -22,7 +22,6 @@ class SequenceEstimator(tf.estimator.Estimator):
                  model_params,
                  sequence_columns,
                  context_columns=None,
-                 weight_column=None,
                  input_partitioner=None,
                  model_dir=None,
                  warm_start_from=None,
@@ -53,7 +52,6 @@ class SequenceEstimator(tf.estimator.Estimator):
           sequence_columns: iterable containing `FeatureColumn`s that represent sequential model inputs.
           context_columns: iterable containing `FeatureColumn`s that represent model inputs not associated with a
             specific timestep.
-          weight_column: Optional. String key used to fetch user-defined weights `Tensor` from the `features`.
           input_partitioner: Optional. Partitioner for input layer variables.
           model_dir: Optional. Directory to save model parameters, graph and etc. This can also be used to load
             checkpoints from the directory into a estimator to continue training a previously saved model.
@@ -74,10 +72,6 @@ class SequenceEstimator(tf.estimator.Estimator):
         self.sequence_columns = sequence_columns
         self.context_columns = context_columns
         self.input_partitioner = input_partitioner
-
-        if weight_column is not None and not isinstance(weight_column, six.string_types):
-            raise ValueError('Weight column should be a string key matching features.')
-        self.weight_column = weight_column
 
         _params = self._model_params(model_params)
 
@@ -122,7 +116,6 @@ class SequenceEstimator(tf.estimator.Estimator):
             prediction_type=self.prediction_type,
             sequence_columns=self.sequence_columns,
             context_columns=self.context_columns,
-            weight_column=self.weight_column,
             input_partitioner=self.input_partitioner,
 
             features=features,
@@ -136,13 +129,14 @@ class SequenceEstimator(tf.estimator.Estimator):
 class FullSequenceClassifier(SequenceEstimator):
     """Dynamic-length sequence classifier. Estimates one class for a whole sequence."""
 
-    def __init__(self, label_vocabulary, loss_reduction=tf.losses.Reduction.SUM, *args, **kwargs):
+    def __init__(self, label_vocabulary, loss_reduction=tf.losses.Reduction.SUM, weight_column=None, *args, **kwargs):
         """Initializes a `FullSequenceClassifier` instance.
 
         Args:
           label_vocabulary: list of strings represents possible label values.
           loss_reduction: Optional. One of `tf.losses.Reduction` except `NONE`. Describes how to reduce training loss
             over batch. Defaults to `SUM`.
+          weight_column: Optional. String key used to fetch user-defined weights `Tensor` from the `features`.
           *args: positional arguments for SequenceEstimator
           **kwargs: keyword arguments for SequenceEstimator
         """
@@ -150,7 +144,7 @@ class FullSequenceClassifier(SequenceEstimator):
         self.label_vocabulary = label_vocabulary
         self.loss_reduction = loss_reduction
 
-        estimator_head = self._estimator_head()
+        estimator_head = self._estimator_head(weight_column)
         prediction_type = self._prediction_type()
 
         super(FullSequenceClassifier, self).__init__(
@@ -160,18 +154,17 @@ class FullSequenceClassifier(SequenceEstimator):
             **kwargs
         )
 
-    def _estimator_head(self):
+    def _estimator_head(self, weight_column):
         if len(self.label_vocabulary) == 2:
             return binary_classification_head(
-                weight_column=WEIGHTS_KEY,
+                weight_column=weight_column,
                 label_vocabulary=self.label_vocabulary,
                 loss_reduction=self.loss_reduction,
             )
 
-        # TODO: CRF
         return multi_class_head(
             len(self.label_vocabulary),
-            weight_column=WEIGHTS_KEY,
+            weight_column=weight_column,
             label_vocabulary=self.label_vocabulary,
             loss_reduction=self.loss_reduction,
         )
@@ -184,13 +177,14 @@ class FullSequenceClassifier(SequenceEstimator):
 class FullSequenceRegressor(SequenceEstimator):
     """Dynamic-length sequence regressor. Estimates one value for a whole sequence."""
 
-    def __init__(self, label_dimension, loss_reduction=tf.losses.Reduction.SUM, *args, **kwargs):
+    def __init__(self, label_dimension, loss_reduction=tf.losses.Reduction.SUM, weight_column=None, *args, **kwargs):
         """Initializes a `FullSequenceRegressor` instance.
 
         Args:
           label_dimension: Number of regression targets per example. This is the size of the last labels dimension.
           loss_reduction: Optional. One of `tf.losses.Reduction` except `NONE`. Describes how to reduce training loss
             over batch. Defaults to `SUM`.
+          weight_column: Optional. String key used to fetch user-defined weights `Tensor` from the `features`.
           *args: positional arguments for SequenceEstimator
           **kwargs: keyword arguments for SequenceEstimator
         """
@@ -198,7 +192,7 @@ class FullSequenceRegressor(SequenceEstimator):
         self.label_dimension = label_dimension
         self.loss_reduction = loss_reduction
 
-        estimator_head = self._estimator_head()
+        estimator_head = self._estimator_head(weight_column)
         prediction_type = self._prediction_type()
 
         super(FullSequenceRegressor, self).__init__(
@@ -208,9 +202,9 @@ class FullSequenceRegressor(SequenceEstimator):
             **kwargs
         )
 
-    def _estimator_head(self):
+    def _estimator_head(self, weight_column):
         return regression_head(
-            weight_column=WEIGHTS_KEY,
+            weight_column=weight_column,
             label_dimension=self.label_dimension,
             loss_reduction=self.loss_reduction,
         )
@@ -223,6 +217,21 @@ class FullSequenceRegressor(SequenceEstimator):
 class SequenceItemsClassifier(FullSequenceClassifier):
     """Dynamic-length sequence items classifier. Estimates one class for each sequence item."""
 
+    def _estimator_head(self, weight_column):
+        if len(self.label_vocabulary) == 2:
+            return sequence_binary_classification_head_with_sigmoid(
+                weight_column=weight_column,
+                label_vocabulary=self.label_vocabulary,
+                loss_reduction=self.loss_reduction,
+            )
+
+        return sequence_multi_class_head_with_softmax(
+            len(self.label_vocabulary),
+            weight_column=weight_column,
+            label_vocabulary=self.label_vocabulary,
+            loss_reduction=self.loss_reduction,
+        )
+
     @staticmethod
     def _prediction_type():
         return PredictionType.MULTIPLE
@@ -230,6 +239,13 @@ class SequenceItemsClassifier(FullSequenceClassifier):
 
 class SequenceItemsRegressor(FullSequenceRegressor):
     """Dynamic-length sequence items regressor. Estimates one value for each sequence item."""
+
+    def _estimator_head(self, weight_column):
+        return sequence_regression_head_with_mse_loss(
+            weight_column=weight_column,
+            label_dimension=self.label_dimension,
+            loss_reduction=self.loss_reduction,
+        )
 
     @staticmethod
     def _prediction_type():
