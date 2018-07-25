@@ -304,15 +304,19 @@ def _add_cudnn_rnn_layers(sequence_input, params, is_training=False):
     cudnn_dropout = params.rnn_dropout if is_training and params.rnn_dropout else 0.0
 
     with tf.device('/gpu:0'):
-        with tf.variable_scope('no_partitioner', partitioner=None):
-            # Build Cudnn RNN
-            cudnn_rnn = cudnn_cell(
-                num_layers=cudnn_layers,
-                num_units=cuddnn_units,
-                direction=cudnn_direction,
-                dropout=cudnn_dropout,
-            )
-            rnn_outputs, _ = cudnn_rnn(sequence_input, training=is_training)
+        partitioner = tf.get_variable_scope().partitioner
+        tf.get_variable_scope().set_partitioner(None)  # Partitioner not supported with CuDnn
+
+        # Build Cudnn RNN
+        cudnn_rnn = cudnn_cell(
+            num_layers=cudnn_layers,
+            num_units=cuddnn_units,
+            direction=cudnn_direction,
+            dropout=cudnn_dropout,
+        )
+        rnn_outputs, _ = cudnn_rnn(sequence_input, training=is_training)
+
+        tf.get_variable_scope().set_partitioner(partitioner)
 
     return rnn_outputs
 
