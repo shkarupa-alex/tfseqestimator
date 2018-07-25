@@ -289,8 +289,6 @@ def _add_cudnn_rnn_layers(sequence_input, params, is_training=False):
     cudnn_layers = len(params.rnn_layers)
     cuddnn_units = max(params.rnn_layers)
 
-    tf.get_variable_scope().set_partitioner(None)
-
     if RnnType.is_gru(params.rnn_type):
         cudnn_cell = CudnnGRU
     else:
@@ -305,14 +303,16 @@ def _add_cudnn_rnn_layers(sequence_input, params, is_training=False):
 
     cudnn_dropout = params.rnn_dropout if is_training and params.rnn_dropout else 0.0
 
-    # Build Cudnn RNN
-    cudnn_rnn = cudnn_cell(
-        num_layers=cudnn_layers,
-        num_units=cuddnn_units,
-        direction=cudnn_direction,
-        dropout=cudnn_dropout,
-    )
-    rnn_outputs, _ = cudnn_rnn(sequence_input, training=is_training)
+    with tf.device('/gpu:0'):
+        with tf.variable_scope('no_partitioner', partitioner=None):
+            # Build Cudnn RNN
+            cudnn_rnn = cudnn_cell(
+                num_layers=cudnn_layers,
+                num_units=cuddnn_units,
+                direction=cudnn_direction,
+                dropout=cudnn_dropout,
+            )
+            rnn_outputs, _ = cudnn_rnn(sequence_input, training=is_training)
 
     return rnn_outputs
 
