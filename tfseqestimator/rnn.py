@@ -114,8 +114,6 @@ def build_dynamic_rnn(sequence_input, sequence_length, params, is_training=False
         if not len(params.rnn_layers):
             raise ValueError('At least one layer required for RNN.')
 
-        # with tf.variable_scope('rnn', values=(sequence_input, _get_sequence_length)) as rnn_scope:
-
         # Convert to Time-major order
         sequence_input = tf.transpose(sequence_input, [1, 0, 2], name='time_major')
 
@@ -288,9 +286,10 @@ def _add_cudnn_rnn_layers(sequence_input, params, is_training=False):
 
     if 1 != len(set(params.rnn_layers)):
         tf.logging.warning('Cudnn RNNs does not support different layers sizes. Maximum size will be used.')
-
     cudnn_layers = len(params.rnn_layers)
     cuddnn_units = max(params.rnn_layers)
+
+    tf.get_variable_scope().set_partitioner(None)
 
     if RnnType.is_gru(params.rnn_type):
         cudnn_cell = CudnnGRU
