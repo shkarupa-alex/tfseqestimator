@@ -10,7 +10,7 @@ from tensorflow.contrib.estimator.python.estimator.rnn import _DEFAULT_CLIP_NORM
 from .input import build_sequence_input
 from .rnn import build_dynamic_rnn, select_last_activations
 from .dense import build_logits_activations, apply_time_distributed
-from .weight import WEIGHTS_KEY, make_sequence_weights, make_full_weights
+from .head import SequenceLengthProvider
 
 
 class PredictionType(object):
@@ -28,7 +28,7 @@ class PredictionType(object):
 
 
 def build_model_fn(
-        estimator_head, prediction_type, sequence_columns, context_columns, weight_column, input_partitioner,
+        estimator_head, prediction_type, sequence_columns, context_columns, input_partitioner,
         features, labels, mode, params, config):
     """Combine sequence and context features into sequence input tensor.
     Args:
@@ -37,7 +37,6 @@ def build_model_fn(
       sequence_columns: iterable containing `FeatureColumn`s that represent sequential model inputs.
       context_columns: iterable containing `FeatureColumn`s that represent model inputs not associated with a
         specific timestep.
-      weight_column: string key used to fetch user-defined weights `Tensor` from the `features`.
       input_partitioner: Partitioner for input layer variables.
       features: `dict` containing the input `Tensor`s.
       labels: single `Tensor` or `dict` of same (for multi-head models).
@@ -63,12 +62,6 @@ def build_model_fn(
     """
     if not isinstance(features, dict):
         raise ValueError('Features should be a dictionary of `Tensor`s. Given type: {}'.format(type(features)))
-
-    if WEIGHTS_KEY in features:
-        raise ValueError('Features key {} is reserved.'.format(WEIGHTS_KEY))
-
-    if weight_column is not None and weight_column not in features:
-        raise ValueError('Weight column {} not found in `features`.'.format(weight_column))
 
     # Create input features partitioner
     num_ps_replicas = config.num_ps_replicas if config else 0
@@ -108,16 +101,15 @@ def build_model_fn(
             # Add dense layers
             logits = build_logits_activations(last_output, params, estimator_head.logits_dimension, is_training)
 
-            # Evaluate full sequence weights
-            features[WEIGHTS_KEY] = make_full_weights(features, weight_column, logits)
-
         else:  # PredictionType.MULTIPLE == prediction_type
             # Add time-distributed dense layers
             logits = apply_time_distributed(
                 build_logits_activations, rnn_outputs, params, estimator_head.logits_dimension, is_training)
 
-            # Evaluate sequence items weights
-            features[WEIGHTS_KEY] = make_sequence_weights(features, weight_column, logits, sequence_length)
+            if not isinstance(estimator_head, SequenceLengthProvider):
+                err_msg = 'Estimator `_Head` for multiple predictions should be successor of SequenceLengthContainer'
+                raise ValueError(err_msg)
+            estimator_head.set_sequence_length(sequence_length)
 
     # Create optimizer instance
     optimizer = get_optimizer_instance(params.train_optimizer, learning_rate=params.learning_rate)

@@ -123,13 +123,14 @@ class FullSequenceClassifierTest(tf.test.TestCase):
     def setUp(self):
         self.model_dir = tempfile.mkdtemp()
         self.export_dir = tempfile.mkdtemp()
+        tf.set_random_seed(1234)
+        np.random.seed(1234)
 
     def tearDown(self):
         shutil.rmtree(self.model_dir, ignore_errors=True)
         shutil.rmtree(self.export_dir, ignore_errors=True)
 
     def testLearnMajority(self):
-        tf.set_random_seed(1234)
         estimator = FullSequenceClassifier(
             label_vocabulary=['0', '1'],
             model_params={
@@ -173,13 +174,14 @@ class FullSequenceRegressorTest(tf.test.TestCase):
     def setUp(self):
         self.model_dir = tempfile.mkdtemp()
         self.export_dir = tempfile.mkdtemp()
+        tf.set_random_seed(1234)
+        np.random.seed(1234)
 
     def tearDown(self):
         shutil.rmtree(self.model_dir, ignore_errors=True)
         shutil.rmtree(self.export_dir, ignore_errors=True)
 
     def testLearnMean(self):
-        tf.set_random_seed(1234)
         estimator = FullSequenceRegressor(
             label_dimension=1,
             model_params={
@@ -219,17 +221,19 @@ class FullSequenceRegressorTest(tf.test.TestCase):
         estimator.export_savedmodel(self.export_dir, serving_input_receiver_fn)
         self.assertTrue(tf.gfile.Exists(self.export_dir))
 
+
 class SequenceItemsClassifierTest(tf.test.TestCase):
     def setUp(self):
         self.model_dir = tempfile.mkdtemp()
         self.export_dir = tempfile.mkdtemp()
+        tf.set_random_seed(1234)
+        np.random.seed(1234)
 
     def tearDown(self):
         shutil.rmtree(self.model_dir, ignore_errors=True)
         shutil.rmtree(self.export_dir, ignore_errors=True)
 
     def testLearnShiftByOne(self):
-        tf.set_random_seed(1234)
         estimator = SequenceItemsClassifier(
             label_vocabulary=['0', '1'],
             model_params={
@@ -267,31 +271,33 @@ class SequenceItemsClassifierTest(tf.test.TestCase):
         estimator.export_savedmodel(self.export_dir, serving_input_receiver_fn)
         self.assertTrue(tf.gfile.Exists(self.export_dir))
 
+
 class SequenceItemsRegressorTest(tf.test.TestCase):
     def setUp(self):
         self.model_dir = tempfile.mkdtemp()
         self.export_dir = tempfile.mkdtemp()
+        tf.set_random_seed(1234)
+        np.random.seed(1234)
 
     def tearDown(self):
         shutil.rmtree(self.model_dir, ignore_errors=True)
         shutil.rmtree(self.export_dir, ignore_errors=True)
 
     def testLearnSineFunction(self):
-        tf.set_random_seed(1234)
         estimator = SequenceItemsRegressor(
             label_dimension=1,
             model_params={
                 'rnn_layers': [4],
-                'learning_rate': 0.1
+                'learning_rate': 0.01
             },
             sequence_columns=[contrib_columns.sequence_numeric_column('inputs')],
             model_dir=self.model_dir
         )
-        estimator.train(input_fn=lambda: sine_dataset(2000, 64, 8), steps=200)
+        estimator.train(input_fn=lambda: sine_dataset(20000, 64, 16), steps=1000)
 
         tf.set_random_seed(4321)
-        loss = estimator.evaluate(input_fn=lambda: sine_dataset(200, 64, 8), steps=20)['loss']
-        self.assertLess(loss, 0.02, 'Loss should be less than {}; got {}'.format(0.02, loss))
+        loss = estimator.evaluate(input_fn=lambda: sine_dataset(200, 64, 16), steps=20)['loss']
+        self.assertLess(loss, 0.2, 'Loss should be less than {}; got {}'.format(0.2, loss))
 
     @unittest.skipUnless(tf.test.is_gpu_available(cuda_only=True), 'Test only applicable when running on GPUs')
     def testExportCudnnBiDnn(self):
@@ -299,7 +305,7 @@ class SequenceItemsRegressorTest(tf.test.TestCase):
             label_dimension=1,
             model_params={
                 'rnn_type': RnnType.CUDNN_BIDIRECTIONAL_GRU,
-                'rnn_layers': [4],
+                'rnn_layers': [4, 3],
                 'dense_layers': [3, 2],
                 'learning_rate': 0.1
             },

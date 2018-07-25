@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from setuptools import find_packages
 from setuptools import setup
 
 setup(
@@ -12,7 +13,7 @@ setup(
     author='Shkarupa Alex',
     author_email='shkarupa.alex@gmail.com',
     license='MIT',
-    packages=['tfseqestimator'],
+    packages=find_packages(),
     install_requires=[
         'tensorflow>=1.9.0',
     ],
