@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import six
 import tensorflow as tf
 from tensorflow.python.estimator.canned.dnn import _add_hidden_layer_summary
 
@@ -17,12 +18,18 @@ class DenseActivation(object):
 
     @classmethod
     def validate(cls, key):
-        if key and key not in cls.all():
-            raise ValueError('Invalid activation name: {}'.format(key))
+        if callable(key):
+            return
+        elif isinstance(key, six.string_types) and key in cls.all():
+            return
+        else:
+            raise ValueError('Invalid activation type {} or name: {}'.format(type(key), key))
 
     @classmethod
     def instance(cls, key):
-        if cls.RELU == key:
+        if callable(key):
+            return key
+        elif cls.RELU == key:
             return tf.nn.relu
         elif cls.SIGMOID == key:
             return tf.nn.sigmoid
@@ -32,53 +39,142 @@ class DenseActivation(object):
             return None
 
 
-def build_logits_activations(flat_input, params, logits_size, is_training=False):
+def build_input_dnn(sequence_input, dense_layers, dense_activation, dense_dropout, dense_norm, is_training):
+    """Build a time-distributed dense network for input features.
+
+    Args:
+      sequence_input: `Tensor` with shape `[batch_size, padded_length, d0]`. Each input time step will be represented
+        as separate example in dense layer.
+      dense_layers: iterable of integer number of hidden units per layer. Only negative values will be used.
+      dense_activation: activation function for dense layers. One of `DenseActivation` options or callable.
+      dense_dropout: dropout rate, a number between [0, 1]. Applied after each layer except last one.
+        When set to 0 or None, dropout is disabled.
+      dense_norm: whether to use batch normalization after each layer.
+      is_training: whether this operation will be used in training or inference.
+
+    Returns:
+      `Tensor` with shape `[batch_size, padded_length, d1]`, transformed version of sequence_input.
+    """
+
+    input_layers = list(map(lambda u: -u, filter(lambda u: u < 0, dense_layers)))
+    if not len(input_layers):
+        return sequence_input
+
+    def _input_dnn_producer(flat_input, dense_layers, dense_activation, dense_dropout, dense_norm, is_training):
+        with tf.variable_scope('input_dnn', values=(flat_input,)):
+            return _build_dnn_layers(
+                flat_input=flat_input,
+                dense_layers=dense_layers,
+                dense_activation=dense_activation,
+                dense_dropout=dense_dropout,
+                dense_norm=dense_norm,
+                is_training=is_training,
+            )
+
+    return apply_time_distributed(
+        layer_producer=_input_dnn_producer,
+        sequence_input=sequence_input,
+        dense_layers=input_layers,
+        dense_activation=dense_activation,
+        dense_dropout=dense_dropout,
+        dense_norm=dense_norm,
+        is_training=is_training
+    )
+
+
+def build_logits_activations(
+        flat_input, logits_size, dense_layers, dense_activation, dense_dropout, dense_norm, is_training):
     """Build a dense network with no activation in last layer.
 
     Args:
       flat_input: `Tensor` with shape `[batch_size, d0]` representing one of the RNN time steps.
-      params: `HParams` instance with model parameters. Should contain:
-          dense_layers: iterable of integer number of hidden units per layer.
-          dense_activation: name of activation function applied to each dense layer.
-            Should be fully defined function path.
-          dense_dropout: dropout rate, a number between [0, 1]. Applied after each layer except last one.
-            When set to 0 or None, dropout is disabled.
       logits_size: size of output dimension.
+      dense_layers: iterable of integer number of hidden units per layer. Only positive values will be used.
+      dense_activation: activation function for dense layers. One of `DenseActivation` options or callable.
+      dense_dropout: dropout rate, a number between [0, 1]. Applied after each layer except last one.
+        When set to 0 or None, dropout is disabled.
+      dense_norm: whether to use batch normalization after each layer.
       is_training: whether this operation will be used in training or inference.
 
     Returns:
       `Tensor` with shape `[batch_size, d1]`, transformed version of flat_input.
     """
 
-    with tf.variable_scope('dnn', values=(flat_input,)):
+    with tf.variable_scope('output_dnn', values=(flat_input,)):
+        input_layers = list(filter(lambda u: u > 0, dense_layers))
+        flat_input = _build_dnn_layers(
+            flat_input=flat_input,
+            dense_layers=input_layers,
+            dense_activation=dense_activation,
+            dense_dropout=dense_dropout,
+            dense_norm=dense_norm,
+            is_training=is_training,
+        )
 
-        DenseActivation.validate(params.dense_activation)
-        activation_function = DenseActivation.instance(params.dense_activation)
+    with tf.variable_scope('logits_activations', values=(flat_input,)) as logits_scope:
+        flat_input = tf.layers.dense(
+            flat_input,
+            units=logits_size,
+            activation=None,
+            name=logits_scope
+        )
 
-        for layer_id, num_units in enumerate(params.dense_layers):
-            with tf.variable_scope('layer_%d' % layer_id, values=(flat_input,)) as layer_scope:
-                flat_input = tf.layers.dense(
-                    flat_input,
-                    units=num_units,
-                    activation=activation_function,
-                    name=layer_scope
-                )
-                if params.dense_dropout:
-                    flat_input = tf.layers.dropout(flat_input, rate=params.dense_dropout, training=is_training)
-
-                _add_hidden_layer_summary(flat_input, layer_scope.name)
-
-        with tf.variable_scope('logits', values=(flat_input,)) as logits_scope:
-            flat_input = tf.layers.dense(
-                flat_input,
-                units=logits_size,
-                activation=None,
-                name=logits_scope
-            )
-
-            _add_hidden_layer_summary(flat_input, logits_scope.name)
+        _add_hidden_layer_summary(flat_input, logits_scope.name)
 
         return flat_input
+
+
+def _build_dnn_layers(flat_input, dense_layers, dense_activation, dense_dropout, dense_norm, is_training):
+    """Build a dense network layers.
+
+    Args:
+      flat_input: `Tensor` with shape `[batch_size, d0]` representing one of the RNN time steps.
+      dense_layers: iterable of integer number of hidden units per layer.
+      dense_activation: activation function for dense layers. One of `DenseActivation` options or callable.
+      dense_dropout: dropout rate, a number between [0, 1]. Applied after each layer except last one.
+        When set to 0 or None, dropout is disabled.
+      dense_norm: whether to use batch normalization after each layer.
+      is_training: whether this operation will be used in training or inference.
+
+    Returns:
+      `Tensor` with shape `[batch_size, d1]`, transformed version of flat_input.
+    """
+
+    DenseActivation.validate(dense_activation)
+    activation_function = DenseActivation.instance(dense_activation)
+
+    for layer_id, num_units in enumerate(dense_layers):
+        if num_units <= 0:
+            continue
+
+        with tf.variable_scope('layer_%d' % layer_id, values=(flat_input,)) as layer_scope:
+
+            flat_input = tf.layers.dense(
+                flat_input,
+                units=num_units,
+                activation=activation_function,
+                name=layer_scope
+            )
+
+            if dense_dropout:
+                flat_input = tf.layers.dropout(
+                    flat_input,
+                    rate=dense_dropout,
+                    training=is_training,
+                    name='dropout_%d' % layer_id,
+                )
+
+            if dense_norm:
+                flat_input = tf.layers.batch_normalization(
+                    flat_input,
+                    momentum=0.999,
+                    training=is_training,
+                    name='batchnorm_%d' % layer_id,
+                )
+
+            _add_hidden_layer_summary(flat_input, layer_scope.name)
+
+    return flat_input
 
 
 def apply_time_distributed(layer_producer, sequence_input, *args, **kwargs):

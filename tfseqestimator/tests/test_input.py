@@ -60,22 +60,17 @@ def context_columns():
     return [location_onehot]
 
 
-def input_params():
-    return HParams(
-        sequence_dropout=0.0,
-        context_dropout=None,
-    )
-
-
 class BuildSequenceInputTest(tf.test.TestCase):
     def testInputShape(self):
         partitioner = tf.min_max_variable_partitioner(max_partitions=10)
         sequence_input, _ = build_sequence_input(
-            sequence_columns(),
-            context_columns(),
-            partitioner,
-            features_fixture(),
-            input_params(),
+            features=features_fixture(),
+            sequence_columns=sequence_columns(),
+            context_columns=context_columns(),
+            input_partitioner=partitioner,
+            sequence_dropout=0.,
+            context_dropout=None,
+            is_training=False,
         )
         with self.test_session() as sess:
             sess.run([tf.global_variables_initializer(), tf.tables_initializer()])
@@ -88,16 +83,13 @@ class BuildSequenceInputTest(tf.test.TestCase):
         ]), sequence_input_value.shape)
 
     def testInputDropout(self):
-        params = input_params().override_from_dict({
-            'sequence_dropout': 0.999,
-            'context_dropout': 0.999,
-        })
         sequence_input, _ = build_sequence_input(
-            sequence_columns(),
-            context_columns(),
-            None,
-            features_fixture(),
-            params,
+            features=features_fixture(),
+            sequence_columns=sequence_columns(),
+            context_columns=context_columns(),
+            input_partitioner=None,
+            sequence_dropout=0.999,
+            context_dropout=0.999,
             is_training=True
         )
 
@@ -109,11 +101,13 @@ class BuildSequenceInputTest(tf.test.TestCase):
 
     def testInputLength(self):
         _, sequence_length = build_sequence_input(
-            sequence_columns(),
-            context_columns(),
-            None,
-            features_fixture(),
-            input_params(),
+            features=features_fixture(),
+            sequence_columns=sequence_columns(),
+            context_columns=context_columns(),
+            input_partitioner=None,
+            sequence_dropout=0.,
+            context_dropout=0.,
+            is_training=False,
         )
         with self.test_session() as sess:
             sess.run([tf.global_variables_initializer(), tf.tables_initializer()])
