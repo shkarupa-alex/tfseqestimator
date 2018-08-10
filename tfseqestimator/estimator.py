@@ -5,7 +5,7 @@ from __future__ import print_function
 import tensorflow as tf
 from tensorflow.python.estimator.canned.head import _Head
 from tensorflow.contrib.estimator import binary_classification_head, multi_class_head, regression_head
-from tensorflow.contrib.training import HParams
+from tensorflow.contrib.estimator.python.estimator.rnn import _DEFAULT_LEARNING_RATE
 from .rnn import RnnType
 from .dense import DenseActivation
 from .model import build_model_fn, PredictionType
@@ -16,16 +16,13 @@ from .head import sequence_regression_head_with_mse_loss
 class SequenceEstimator(tf.estimator.Estimator):
     """Dynamic-length sequence estimator with user-specified head and prediction type."""
 
-    def __init__(self,
-                 estimator_head,
-                 prediction_type,
-                 model_params,
-                 sequence_columns,
-                 context_columns=None,
-                 input_partitioner=None,
-                 model_dir=None,
-                 warm_start_from=None,
-                 config=None):
+    def __init__(
+            self, estimator_head, prediction_type,
+            sequence_columns, context_columns=None, input_partitioner=None, sequence_dropout=0., context_dropout=0.,
+            rnn_type=RnnType.REGULAR_FORWARD_GRU, rnn_layers=None, rnn_dropout=0.,
+            dense_layers=None, dense_activation=DenseActivation.RELU, dense_dropout=0., dense_norm=False,
+            train_optimizer='Adam', learning_rate=_DEFAULT_LEARNING_RATE,
+            model_dir=None, warm_start_from=None, config=None):
         """Initializes `SequenceEstimator` instance.
 
         Args:
@@ -33,33 +30,34 @@ class SequenceEstimator(tf.estimator.Estimator):
             Specifies the model's output and loss function to be optimized.
           prediction_type: one of PredictionType options.
             Specifies if full sequence should be predicted or each item separately.
-          model_params: `dict` with model parameters. Available options are:
-            sequence_dropout: sequence input dropout rate, a number between [0, 1].
-              When set to 0 or None, dropout is disabled.
-            context_dropout: context input dropout rate, a number between [0, 1].
-              When set to 0 or None, dropout is disabled.
-            rnn_type: type, direction and implementations of RNN. One of `RnnType` options.
-            rnn_layers: iterable of integer number of hidden units per layer.
-            rnn_dropout: recurrent layers dropout rate, a number between [0, 1]. Applied after each layer.
-              When set to 0 or None, dropout is disabled.
-            dense_layers: iterable of integer number of hidden units per layer.
-            dense_activation: name of activation function applied to each dense layer.
-              Should be fully defined function path.
-            dense_dropout: dropout rate, a number between [0, 1]. Applied after each layer except last one.
-              When set to 0 or None, dropout is disabled.
-            train_optimizer: name of `Optimizer`.
-            learning_rate: optimizer learning rate.
           sequence_columns: iterable containing `FeatureColumn`s that represent sequential model inputs.
           context_columns: iterable containing `FeatureColumn`s that represent model inputs not associated with a
             specific timestep.
-          input_partitioner: Optional. Partitioner for input layer variables.
-          model_dir: Optional. Directory to save model parameters, graph and etc. This can also be used to load
+          input_partitioner: partitioner for input layer variables.
+          sequence_dropout: sequence input dropout rate, a number between [0, 1].
+            When set to 0 or None, dropout is disabled.
+          context_dropout: context input dropout rate, a number between [0, 1].
+            When set to 0 or None, dropout is disabled.
+          rnn_type: type, direction and implementations of RNN. One of `RnnType` options.
+          rnn_layers: iterable of integer number of hidden units per layer.
+          rnn_dropout: recurrent layers dropout rate, a number between [0, 1]. Applied after each layer.
+            When set to 0 or None, dropout is disabled.
+          dense_layers: iterable of integer number of hidden units per layer. Negative values corresponding to layers
+            before RNN, postivie right after.
+          dense_activation: activation function for dense layers. One of `DenseActivation` options or callable.
+          dense_dropout: dropout rate, a number between [0, 1]. Applied after each layer except last one.
+            When set to 0 or None, dropout is disabled.
+          dense_norm: whether to use batch normalization after each dense layer.
+          train_optimizer: string or `Optimizer` object, or callable that creates the optimizer to use for training.
+            If not specified, will use the Adam optimizer with a default learning rate of 0.05.
+          learning_rate: floating point value. The learning rate.
+          model_dir: directory to save model parameters, graph and etc. This can also be used to load
             checkpoints from the directory into a estimator to continue training a previously saved model.
-          warm_start_from: Optional. A string filepath to a checkpoint to warm-start from, or a `WarmStartSettings`
+          warm_start_from: string filepath to a checkpoint to warm-start from, or a `WarmStartSettings`
             object to fully configure warm-starting.  If the string filepath is provided instead of a
             `WarmStartSettings`, then all weights are warm-started, and it is assumed that vocabularies and Tensor
             names are unchanged.
-          config: Optional. `RunConfig` object to configure the runtime settings.
+          config: optional. `RunConfig` object to configure the runtime settings.
         """
 
         if not isinstance(estimator_head, _Head):
@@ -72,38 +70,19 @@ class SequenceEstimator(tf.estimator.Estimator):
         self.sequence_columns = sequence_columns
         self.context_columns = context_columns
         self.input_partitioner = input_partitioner
+        self.sequence_dropout = sequence_dropout
+        self.context_dropout = context_dropout
+        self.rnn_type = rnn_type
+        self.rnn_layers = [1] if rnn_layers is None else list(rnn_layers)
+        self.rnn_dropout = rnn_dropout
+        self.dense_layers = [] if dense_layers is None else list(dense_layers)
+        self.dense_activation = dense_activation
+        self.dense_dropout = dense_dropout
+        self.dense_norm=dense_norm
+        self.train_optimizer = train_optimizer
+        self.learning_rate = learning_rate
 
-        _params = self._model_params(model_params)
-
-        super(SequenceEstimator, self).__init__(self._model_fn, model_dir, config, _params, warm_start_from)
-
-    @staticmethod
-    def _model_params(user_params):
-        """Initializes `HParams` instance from default and user-defined model parameters
-
-        Args:
-          user_params: `dict` with model parameters. See __init__ for more details.
-
-        Returns:
-          `HParams` instance with all required parameters set.
-        """
-
-        params = HParams(
-            sequence_dropout=0.0,
-            context_dropout=0.0,
-            rnn_type=RnnType.REGULAR_BIDIRECTIONAL_LSTM,
-            rnn_layers=[1],
-            rnn_dropout=0.0,
-            dense_layers=[-1],  # create param and remember type
-            dense_activation=DenseActivation.RELU,
-            dense_dropout=0.0,
-            train_optimizer='Adam',
-            learning_rate=0.001,
-        )
-        params.set_hparam('dense_layers', [])  # set actual default value for param with known type
-        params.override_from_dict(user_params)  # update params requested by user
-
-        return params
+        super(SequenceEstimator, self).__init__(self._model_fn, model_dir, config, None, warm_start_from)
 
     def _model_fn(self, features, labels, mode, params, config):
         """`Estimator` model function.
@@ -112,17 +91,27 @@ class SequenceEstimator(tf.estimator.Estimator):
           Model function.
         """
         return build_model_fn(
+            features=features,
+            labels=labels,
+            mode=mode,
+            params=params,
+            config=config,
             estimator_head=self.estimator_head,
             prediction_type=self.prediction_type,
             sequence_columns=self.sequence_columns,
             context_columns=self.context_columns,
             input_partitioner=self.input_partitioner,
-
-            features=features,
-            labels=labels,
-            mode=mode,
-            params=params,
-            config=config
+            sequence_dropout=self.sequence_dropout,
+            context_dropout=self.context_dropout,
+            rnn_type=self.rnn_type,
+            rnn_layers=self.rnn_layers,
+            rnn_dropout=self.rnn_dropout,
+            dense_norm=self.dense_norm,
+            dense_layers=self.dense_layers,
+            dense_activation=self.dense_activation,
+            dense_dropout=self.dense_dropout,
+            train_optimizer=self.train_optimizer,
+            learning_rate=self.learning_rate,
         )
 
 

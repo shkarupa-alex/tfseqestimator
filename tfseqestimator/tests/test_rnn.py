@@ -7,26 +7,19 @@ import tensorflow as tf
 import unittest
 from ..input import build_sequence_input
 from ..rnn import RnnType, build_dynamic_rnn, select_last_activations
-from .test_input import features_fixture, sequence_columns, context_columns, input_params
+from .test_input import features_fixture, sequence_columns, context_columns
 
 
 def sequence_outputs():
     return build_sequence_input(
-        sequence_columns(),
-        context_columns(),
-        None,
-        features_fixture(),
-        input_params()
+        features=features_fixture(),
+        sequence_columns=sequence_columns(),
+        context_columns=context_columns(),
+        input_partitioner=None,
+        sequence_dropout=0.,
+        context_dropout=0.,
+        is_training=False,
     )
-
-
-def rnn_params():
-    params = input_params()
-    params.add_hparam('rnn_type', RnnType.REGULAR_FORWARD_GRU)
-    params.add_hparam('rnn_layers', [8])
-    params.add_hparam('rnn_dropout', 0.)
-
-    return params
 
 
 class BuildDynamicRnnTest(tf.test.TestCase):
@@ -51,9 +44,12 @@ class BuildDynamicRnnTest(tf.test.TestCase):
     def testConstructRegularForwardGRU1(self):
         sequence_input, sequence_length = sequence_outputs()
         rnn_outputs = build_dynamic_rnn(
-            sequence_input,
-            sequence_length,
-            rnn_params(),
+            sequence_input=sequence_input,
+            sequence_length=sequence_length,
+            rnn_type=RnnType.REGULAR_FORWARD_GRU,
+            rnn_layers=[8],
+            rnn_dropout=0.,
+            is_training=False,
         )
         last_output = select_last_activations(rnn_outputs, sequence_length)
 
@@ -74,11 +70,12 @@ class BuildDynamicRnnTest(tf.test.TestCase):
     def testConstructRegularBidirectionalLSTM1(self):
         sequence_input, sequence_length = sequence_outputs()
         rnn_outputs = build_dynamic_rnn(
-            sequence_input,
-            sequence_length,
-            rnn_params().override_from_dict({
-                'rnn_type': RnnType.REGULAR_BIDIRECTIONAL_LSTM
-            }),
+            sequence_input=sequence_input,
+            sequence_length=sequence_length,
+            rnn_type=RnnType.REGULAR_BIDIRECTIONAL_LSTM,
+            rnn_layers=[8],
+            rnn_dropout=0.,
+            is_training=False,
         )
         last_output = select_last_activations(rnn_outputs, sequence_length)
 
@@ -99,12 +96,12 @@ class BuildDynamicRnnTest(tf.test.TestCase):
     def testConstructRegularStackedLSTM2(self):
         sequence_input, sequence_length = sequence_outputs()
         rnn_outputs = build_dynamic_rnn(
-            sequence_input,
-            sequence_length,
-            rnn_params().override_from_dict({
-                'rnn_type': RnnType.REGULAR_STACKED_LSTM,
-                'rnn_layers': [8, 4],
-            }),
+            sequence_input=sequence_input,
+            sequence_length=sequence_length,
+            rnn_type=RnnType.REGULAR_STACKED_LSTM,
+            rnn_layers=[8, 4],
+            rnn_dropout=0.,
+            is_training=False,
         )
         last_output = select_last_activations(rnn_outputs, sequence_length)
 
@@ -126,11 +123,12 @@ class BuildDynamicRnnTest(tf.test.TestCase):
     def testConstructCudnnForwardGRU1(self):
         sequence_input, sequence_length = sequence_outputs()
         rnn_outputs = build_dynamic_rnn(
-            sequence_input,
-            sequence_length,
-            rnn_params().override_from_dict({
-                'rnn_type': RnnType.CUDNN_FORWARD_GRU,
-            }),
+            sequence_input=sequence_input,
+            sequence_length=sequence_length,
+            rnn_type=RnnType.CUDNN_FORWARD_GRU,
+            rnn_layers=[8],
+            rnn_dropout=0.,
+            is_training=False,
         )
         last_output = select_last_activations(rnn_outputs, sequence_length)
 
@@ -152,12 +150,12 @@ class BuildDynamicRnnTest(tf.test.TestCase):
     def testConstructCudnnBidirectionalLSTM2(self):
         sequence_input, sequence_length = sequence_outputs()
         rnn_outputs = build_dynamic_rnn(
-            sequence_input,
-            sequence_length,
-            rnn_params().override_from_dict({
-                'rnn_type': RnnType.CUDNN_BIDIRECTIONAL_LSTM,
-                'rnn_layers': [8, 8],
-            }),
+            sequence_input=sequence_input,
+            sequence_length=sequence_length,
+            rnn_type=RnnType.CUDNN_BIDIRECTIONAL_LSTM,
+            rnn_layers=[8, 8],
+            rnn_dropout=0.,
+            is_training=False,
         )
         last_output = select_last_activations(rnn_outputs, sequence_length)
 
