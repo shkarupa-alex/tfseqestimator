@@ -200,8 +200,7 @@ class FullSequenceRegressorTest(tf.test.TestCase):
             rnn_layers=[8],
             dense_layers=[-2, -3, 3, 2],
             dense_norm=True,
-            # model_dir=self.model_dir
-            model_dir='/Users/alex/HDD/Develop/semtech/tfseqestimator/tmp'
+            model_dir=self.model_dir
         )
         estimator.train(input_fn=lambda: mean_dataset(10000, 50, 16), steps=500)
 
