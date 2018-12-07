@@ -253,7 +253,11 @@ def _create_regular_rnn_cells(rnn_type, rnn_layers, rnn_dropout, is_training):
 
         if is_training and rnn_dropout:
             # Add dropout to each layer except last
-            cell = DropoutWrapper(cell, output_keep_prob=1.0 - rnn_dropout)
+            cell = DropoutWrapper(
+                cell,
+                output_keep_prob=1.0 - rnn_dropout,
+                variational_recurrent=True  # Should be better choice https://arxiv.org/pdf/1707.09861.pdf
+            )
 
         regular_layers.append(cell)
 
