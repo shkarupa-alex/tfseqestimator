@@ -14,6 +14,7 @@ from tensorflow.python.training import queue_runner_impl
 from tensorflow.python.saved_model import signature_constants
 from ..head import sequence_multi_class_head_with_crf_loss, sequence_regression_head_with_mse_loss
 from ..head import sequence_binary_classification_head_with_sigmoid, sequence_multi_class_head_with_softmax
+from ..head import sequence_multi_head
 
 _DEFAULT_SERVING_KEY = signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY
 
@@ -1261,9 +1262,8 @@ class RegressionHeadWithMeanSquaredErrorLossTest(tf.test.TestCase):
         self.assertEqual(tf.float32, spec.predictions[prediction_key].dtype)
         self.assertEqual(tf.float32, spec.loss.dtype)
         self.assertItemsEqual((metric_keys.MetricKeys.LOSS_MEAN,
-                               # Not exist in original head
-                               # metric_keys.MetricKeys.PREDICTION_MEAN,
-                               # metric_keys.MetricKeys.LABEL_MEAN
+                               metric_keys.MetricKeys.PREDICTION_MEAN,
+                               metric_keys.MetricKeys.LABEL_MEAN
                                ),
                               spec.eval_metric_ops.keys())
         self.assertIsNone(spec.train_op)
@@ -1302,7 +1302,7 @@ class RegressionHeadWithMeanSquaredErrorLossTest(tf.test.TestCase):
         #                    = (4 + 9) / 2 = 6.5
         expected_unregularized_loss = 6.5
         expected_regularized_loss = (
-            expected_unregularized_loss + expected_regularization_loss)
+                expected_unregularized_loss + expected_regularization_loss)
         # Create estimator spec.
         spec = head.create_estimator_spec(
             features=features,
@@ -1315,9 +1315,8 @@ class RegressionHeadWithMeanSquaredErrorLossTest(tf.test.TestCase):
         expected_metrics = {
             keys.LOSS_MEAN: expected_unregularized_loss,
             keys.LOSS_REGULARIZATION: expected_regularization_loss,
-            # Not exist in original head
-            # keys.PREDICTION_MEAN: (45 + 41) / 2.0,
-            # keys.LABEL_MEAN: (43 + 44) / 2.0,
+            keys.PREDICTION_MEAN: (45 + 41) / 2.0,
+            keys.LABEL_MEAN: (43 + 44) / 2.0,
         }
 
         # Assert predictions, loss, and metrics.
@@ -1548,9 +1547,8 @@ class RegressionHeadWithMeanSquaredErrorLossTest(tf.test.TestCase):
         self.assertEqual(tf.float32, spec.predictions[prediction_key].dtype)
         self.assertEqual(tf.float32, spec.loss.dtype)
         self.assertItemsEqual((metric_keys.MetricKeys.LOSS_MEAN,
-                               # Not exist in original head
-                               # metric_keys.MetricKeys.PREDICTION_MEAN,
-                               # metric_keys.MetricKeys.LABEL_MEAN
+                               metric_keys.MetricKeys.PREDICTION_MEAN,
+                               metric_keys.MetricKeys.LABEL_MEAN
                                ),
                               spec.eval_metric_ops.keys())
         self.assertIsNone(spec.train_op)
@@ -1786,9 +1784,8 @@ class RegressionHeadWithMeanSquaredErrorLossTest(tf.test.TestCase):
         self.assertEqual(tf.float32, spec.predictions[prediction_key].dtype)
         self.assertEqual(tf.float32, spec.loss.dtype)
         self.assertItemsEqual((metric_keys.MetricKeys.LOSS_MEAN,
-                               # Not exist in original head
-                               # metric_keys.MetricKeys.PREDICTION_MEAN,
-                               # metric_keys.MetricKeys.LABEL_MEAN
+                               metric_keys.MetricKeys.PREDICTION_MEAN,
+                               metric_keys.MetricKeys.LABEL_MEAN
                                ),
                               spec.eval_metric_ops.keys())
         self.assertIsNone(spec.train_op)
@@ -1928,10 +1925,9 @@ class RegressionHeadWithMeanSquaredErrorLossTest(tf.test.TestCase):
         expected_metrics = {
             metric_keys.MetricKeys.LOSS_MEAN:
                 39.076923,
-            # Not exist in original head
-            # metric_keys.MetricKeys.PREDICTION_MEAN:
-            #     (45 + 41 * 0.1 + 44 * 1.5) / 2.6,
-            # metric_keys.MetricKeys.LABEL_MEAN: (35 + 42 * 0.1 + 45 * 1.5) / 2.6,
+            metric_keys.MetricKeys.PREDICTION_MEAN:
+                (45 + 41 * 0.1 + 44 * 1.5) / 2.6,
+            metric_keys.MetricKeys.LABEL_MEAN: (35 + 42 * 0.1 + 45 * 1.5) / 2.6,
         }
 
         # Assert spec contains expected tensors.
@@ -2290,4 +2286,71 @@ class MultiClassHeadWithSoftmaxCrossEntropyLossTest(tf.test.TestCase):
             _initialize_variables(self, monitored_session.Scaffold())
             self.assertAllClose(expected_weights, actual_weights.eval())
             self.assertAllClose(expected_unreduced_loss, unreduced_loss.eval(), rtol=tol, atol=tol)
+            self.assertAllClose(expected_training_loss, training_loss.eval(), rtol=tol, atol=tol)
+
+
+class MultiHeadTest(tf.test.TestCase):
+    def setUp(self):
+        tf.reset_default_graph()
+
+    def test_create_loss_sparse_sequence(self):
+        # Tests create_loss with 1D labels and weights (shape [batch_size]).
+        head1 = sequence_binary_classification_head_with_sigmoid(
+            weight_column='label_weights', label_vocabulary=['a', 'b'], name='head1')
+        head2 = sequence_binary_classification_head_with_sigmoid(
+            weight_column='label_weights', label_vocabulary=['a', 'b'], name='head2')
+        head = sequence_multi_head([head1, head2])
+        head.set_sequence_length([3, 2, 1])
+
+        logits = [
+            [[-45., -45.], [-45., -45.], [45., 45.]],
+            [[-45., -45.], [45., 45.], [-45., -45.]],
+            [[45., 45.], [-45., -45.], [-45., -45.]],
+        ]
+        labels = {
+            'head1': [
+                [['b'], ['a'], ['b']],
+                [['a'], ['b'], ['a']],
+                [['b'], ['a'], ['b']],
+            ],
+            'head2': [
+                [['b'], ['a'], ['b']],
+                [['a'], ['b'], ['a']],
+                [['b'], ['a'], ['b']],
+            ],
+        }
+        weights = [
+            [[1.], [2.], [3.]],
+            [[4.], [5.], [6.]],
+            [[7.], [8.], [9.]],
+        ]
+        features = {
+            'x': np.array((((42,),),), dtype=np.float32),
+            'label_weights': weights
+        }
+
+        expected_weights = [
+            [[1.], [2.], [3.]],
+            [[4.], [5.], [0.]],
+            [[7.], [0.], [0.]],
+        ]
+        expected_unreduced_loss = [
+            [[45.], [0.], [0.]],
+            [[0.], [0.], [0.]],
+            [[0.], [0.], [0.]],
+        ]
+        expected_training_loss = 45. * 2
+
+        training_loss, unreduced_loss, actual_weights, _ = head.create_loss(
+            features=features,
+            mode=tf.estimator.ModeKeys.TRAIN,
+            logits=logits,
+            labels=labels)
+        tol = 1e-2
+        with self.test_session():
+            _initialize_variables(self, monitored_session.Scaffold())
+            self.assertAllClose(expected_weights, actual_weights['head1'].eval())
+            self.assertAllClose(expected_weights, actual_weights['head2'].eval())
+            self.assertAllClose(expected_unreduced_loss, unreduced_loss['head1'].eval(), rtol=tol, atol=tol)
+            self.assertAllClose(expected_unreduced_loss, unreduced_loss['head2'].eval(), rtol=tol, atol=tol)
             self.assertAllClose(expected_training_loss, training_loss.eval(), rtol=tol, atol=tol)

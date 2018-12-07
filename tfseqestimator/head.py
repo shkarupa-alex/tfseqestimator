@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+from tensorflow.contrib.estimator.python.estimator import multi_head
 from tensorflow.python.estimator.canned import head
 from tensorflow.python.ops import lookup_ops
 from tensorflow.python.estimator.canned import metric_keys
@@ -252,6 +253,43 @@ def sequence_multi_class_head_with_crf_loss(
         label_vocabulary=label_vocabulary,
         loss_reduction=loss_reduction,
         name=name)
+
+
+def sequence_multi_head(heads, head_weights=None):
+    """Creates a `_Head` for multi-objective sequence learning.
+
+    This class merges the output of multiple `_Head` objects.
+    Specifically:
+    * For training, sums losses of each head, calls `train_op_fn` with this final loss.
+    * For eval, merges metrics by adding `head.name` suffix to the keys in eval metrics, such as `precision/head1`,
+        `precision/head2`.
+    * For prediction, merges predictions and updates keys in prediction dict to a 2-tuple,
+        `(head.name, prediction_key)`. Merges `export_outputs` such that by default the first head is served.
+
+    Args:
+      heads: List or tuple of `_Head` instances. All heads must have `name` specified. The first head in the list is
+        the default used at serving time.
+      head_weights: Optional list of weights, same length as `heads`. Used when merging losses to calculate the
+        weighted sum of losses from each head. If `None`, all losses are weighted equally.
+
+    Returns:
+      A instance of `_Head` that merges multiple heads.
+    """
+    if head_weights and len(head_weights) != len(heads):
+        raise ValueError(
+            'heads and head_weights must have the same size. '
+            'Given len(heads): {}. Given len(head_weights): {}.'.format(len(heads), len(head_weights)))
+    if not heads:
+        raise ValueError('Must specify heads. Given: {}'.format(heads))
+    for head in heads:
+        if not head.name:
+            raise ValueError('All given heads must have name specified. ' 'Given: {}'.format(head))
+        if not isinstance(head, SequenceLengthProvider):
+            raise ValueError('All given heads must be successor of SequenceLengthContainer')
+
+    return _MultiHead(
+        heads=tuple(heads),
+        head_weights=tuple(head_weights) if head_weights else tuple())
 
 
 class SequenceLengthProvider:
@@ -528,8 +566,8 @@ class _SingleClassHeadWithCrfLogLikelihoodLoss(
                 }
             if mode == tf.estimator.ModeKeys.PREDICT:
                 # classifier_output = _sequence_classification_output(
-                classifier_output=head._classification_output(
-                        scores=probabilities, n_classes=self._n_classes, label_vocabulary=self._label_vocabulary)
+                classifier_output = head._classification_output(
+                    scores=probabilities, n_classes=self._n_classes, label_vocabulary=self._label_vocabulary)
                 return tf.estimator.EstimatorSpec(
                     mode=tf.estimator.ModeKeys.PREDICT,
                     predictions=predictions,
@@ -592,6 +630,13 @@ class _SingleClassHeadWithCrfLogLikelihoodLoss(
             loss=regularized_training_loss,
             train_op=train_op)
 
+
+class _MultiHead(multi_head._MultiHead, SequenceLengthProvider):
+    def set_sequence_length(self, actual_length):
+        super(_MultiHead, self).set_sequence_length(actual_length)
+
+        for head in self._heads:
+            head.set_sequence_length(actual_length)
 
 # def _sequence_classification_output(scores, n_classes, label_vocabulary=None):
 #     """Create classification output for sequential result.

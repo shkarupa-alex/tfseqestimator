@@ -9,7 +9,7 @@ with open('README.md', 'r') as fh:
 
 setup(
     name='tfseqestimator',
-    version='2.1.1',
+    version='2.2.0',
     description='Sequence estimators for Tensorflow',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -19,7 +19,7 @@ setup(
     license='MIT',
     packages=find_packages(),
     install_requires=[
-        'tensorflow>=1.9.0',
+        'tensorflow>=1.12.0',
     ],
     test_suite='nose.collector',
     tests_require=['nose'],
