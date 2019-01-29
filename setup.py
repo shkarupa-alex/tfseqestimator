@@ -9,7 +9,7 @@ with open('README.md', 'r') as fh:
 
 setup(
     name='tfseqestimator',
-    version='2.2.0',
+    version='2.2.1',
     description='Sequence estimators for Tensorflow',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -19,8 +19,13 @@ setup(
     license='MIT',
     packages=find_packages(),
     install_requires=[
-        'tensorflow>=1.12.0',
+        # https://github.com/tensorflow/tensorflow/issues/7166
+        # 'tensorflow>=1.12.0',
     ],
+    extras_require={
+        'tf_cpu': ['tensorflow>=1.12.0'],
+        'tf_gpu': ['tensorflow-gpu>=1.12.0'],
+    },
     test_suite='nose.collector',
     tests_require=['nose'],
     classifiers=[
